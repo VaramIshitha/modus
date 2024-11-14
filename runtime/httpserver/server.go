@@ -223,6 +223,7 @@ func GetMainHandler(options ...func(map[string]http.Handler)) http.Handler {
 	// Add CORS support to all endpoints.
 	c := cors.New(cors.Options{
 		AllowedHeaders: []string{"Authorization", "Content-Type"},
+		AllowedOrigins: []string{"*"},
 	})
 
 	return c.Handler(handler)

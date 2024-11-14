@@ -181,6 +181,8 @@ export default class BenchmarkCommand extends BaseCommand {
       const appBuildPath = path.join(appPath, "build", branch);
       await BuildCommand.run([appPath, "--output", appBuildPath, "--no-logo"]);
 
+      await copyAllFiles("./build", appBuildPath);
+
       // Copy env files to the build directory
       await copyBranchedEnvFiles(appPath, branch, appBuildPath);
 
@@ -217,7 +219,7 @@ export default class BenchmarkCommand extends BaseCommand {
       });
     }
 
-    await runRequests(args.input, branchesToPort);
+    await runRequests(args.input, branches, branchesToPort);
   }
 
   private logError(message: string) {
@@ -225,10 +227,10 @@ export default class BenchmarkCommand extends BaseCommand {
   }
 }
 
-async function runRequests(inputFile: string, branchesToPort: Map<string, number>) {
+async function runRequests(inputFile: string, branches: string[], branchesToPort: Map<string, number>) {
   const inputs = await readCSVFile(inputFile);
 
-  const rows = [];
+  const rows: any[] = [];
 
   const endpoint = "https://eval-kevinm.hypermode.app/graphql";
   const evalClient = new GraphQLClient(endpoint, {
@@ -245,13 +247,26 @@ async function runRequests(inputFile: string, branchesToPort: Map<string, number
 
   for (const input of inputs) {
     const query = gql`
-      query ($name: String!) {
-        sayHello(name: $name)
+      query FindMatchingEmoji($input: String!) {
+        findMatchingEmoji(emojiDescription: $input) {
+          collection
+          status
+          error
+          searchMethod
+          objects {
+            namespace
+            key
+            text
+            labels
+            distance
+            score
+          }
+        }
       }
     `;
 
     const variables = {
-      name: input,
+      input: input,
     };
 
     try {
@@ -260,8 +275,12 @@ async function runRequests(inputFile: string, branchesToPort: Map<string, number
       };
 
       for (const [branch, client] of branchToClient) {
+        const startTime = performance.now();
         const response: any = await client.request(query, variables);
-        rowContent[branch] = response.sayHello;
+        const endTime = performance.now();
+        const responseTime = endTime - startTime;
+
+        rowContent[branch] = response.findMatchingEmoji.objects[0].key;
 
         const evalQuery = gql`
           query ScoreResponse($input: String!, $output: String!) {
@@ -274,11 +293,12 @@ async function runRequests(inputFile: string, branchesToPort: Map<string, number
 
         const evalVariables = {
           input: `Generate an emoji for the input query "${input}"`,
-          output: response.sayHello,
+          output: response.findMatchingEmoji.objects[0].key,
         };
 
         const evalResponse: any = await evalClient.request(evalQuery, evalVariables);
         rowContent[branch + "score"] = evalResponse.scoreResponse.score;
+        rowContent[branch + "time"] = responseTime;
       }
 
       rows.push(rowContent);
@@ -287,6 +307,24 @@ async function runRequests(inputFile: string, branchesToPort: Map<string, number
     }
   }
 
+  const finalRow: any = { input: "Average" };
+  branches.forEach((b) => {
+    let score = 0;
+    let time = 0;
+    const count = rows.length;
+    rows.forEach((r) => {
+      score += r[b + "score"];
+      time += r[b + "time"];
+    });
+
+    console.log(`Average score for branch ${b}: ${score / count}`);
+    console.log(`Average response time for branch ${b}: ${time / count}ms`);
+
+    finalRow[b] = "/";
+    finalRow[b + "score"] = score / count;
+    finalRow[b + "time"] = time / count;
+  });
+  rows.push(finalRow);
   writeJSONToCSV(rows, "./output.csv");
 }
 
@@ -302,17 +340,32 @@ async function copyEnvFiles(appPath: string, buildPath: string): Promise<void> {
   }
 }
 
-async function copyBranchedEnvFiles(appPath: string, branch: string, buildPath: string): Promise<void> {
-  for (const f of ENV_FILES) {
-    const file = f + "." + branch;
-    const src = path.join(appPath, file);
-    const dest = path.join(buildPath, file);
-    if (await fs.exists(src)) {
-      await fs.copyFile(src, dest);
-    } else if (await fs.exists(dest)) {
-      await fs.unlink(dest);
+async function copyAllFiles(src: string, target: string) {
+  try {
+    // Ensure the target directory exists, create it if not
+    await fs.mkdir(target, { recursive: true });
+
+    // Read all items in the source directory
+    const items = await fs.readdir(src, { withFileTypes: true });
+
+    for (const item of items) {
+      if (item.isFile() && (item.name === "modus.json" || item.name === "emoji-search.wasm")) {
+        const srcPath = path.join(src, item.name);
+        const targetPath = path.join(target, item.name);
+        // Copy the specific files
+        await fs.copyFile(srcPath, targetPath);
+      }
     }
+
+    console.log(`Selected files copied from ${src} to ${target}`);
+  } catch (error) {
+    console.error(`Error copying files`);
+    throw error;
   }
+}
+
+async function copyBranchedEnvFiles(appPath: string, branch: string, buildPath: string): Promise<void> {
+  await fs.copyFile(appPath + `/.env.local.${branch}`, buildPath + "/.env.dev.local");
 }
 
 async function getGitBranches(cwd: string) {
