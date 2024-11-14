@@ -273,7 +273,7 @@ async function runRequests(inputFile: string, branchesToPort: Map<string, number
         `;
 
         const evalVariables = {
-          input: rowContent[branch],
+          input: `Generate an emoji for the input query "${input}"`,
           output: response.sayHello,
         };
 
