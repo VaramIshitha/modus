@@ -84,6 +84,8 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/cli/bin/modus.js",
+      "args": ["benchmark", "${workspaceFolder}/../master-script"],
+      "cwd": "${workspaceFolder}/../master-script",
       "env": {
         "FORCE_COLOR": "1",
         "MODUS_DEBUG": "true"

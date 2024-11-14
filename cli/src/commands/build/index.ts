@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Args } from "@oclif/core";
+import { Args, Flags } from "@oclif/core";
 import chalk from "chalk";
 import path from "node:path";
 import os from "node:os";
@@ -30,7 +30,13 @@ export default class BuildCommand extends BaseCommand {
     }),
   };
 
-  static flags = {};
+  static flags = {
+    output: Flags.directory({
+      char: "o",
+      description: "Build output directory",
+      default: "./build",
+    }),
+  };
 
   static description = "Build a Modus app";
 
@@ -87,7 +93,7 @@ export default class BuildCommand extends BaseCommand {
             this.logError("Modus Go Build tool is not installed");
             return;
           }
-          return await execFileWithExitCode(buildTool, ["."], execOpts);
+          return await execFileWithExitCode(buildTool, ["-output", flags.output, "."], execOpts);
         }
         default:
           this.logError("Unsupported SDK");
