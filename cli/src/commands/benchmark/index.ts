@@ -182,7 +182,7 @@ export default class BenchmarkCommand extends BaseCommand {
       await BuildCommand.run([appPath, "--output", appBuildPath, "--no-logo"]);
 
       // Copy env files to the build directory
-      await copyEnvFiles(appPath, appBuildPath);
+      await copyBranchedEnvFiles(appPath, branch, appBuildPath);
 
       // Spawn the runtime child process
       const child = spawn(runtimePath, ["-appPath", appBuildPath, "-port", branchesToPort.get(branch)!.toString(), "-refresh=1s"], {
@@ -292,6 +292,19 @@ async function runRequests(inputFile: string, branchesToPort: Map<string, number
 
 async function copyEnvFiles(appPath: string, buildPath: string): Promise<void> {
   for (const file of ENV_FILES) {
+    const src = path.join(appPath, file);
+    const dest = path.join(buildPath, file);
+    if (await fs.exists(src)) {
+      await fs.copyFile(src, dest);
+    } else if (await fs.exists(dest)) {
+      await fs.unlink(dest);
+    }
+  }
+}
+
+async function copyBranchedEnvFiles(appPath: string, branch: string, buildPath: string): Promise<void> {
+  for (const f of ENV_FILES) {
+    const file = f + "." + branch;
     const src = path.join(appPath, file);
     const dest = path.join(buildPath, file);
     if (await fs.exists(src)) {
